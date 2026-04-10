@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive Traffic Signal Simulation</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #07090d;
+  --surface: #0e1117;
+  --surface2: #141820;
+  --border: #1e2330;
+  --border2: #252d3f;
+  --accent: #ff00a6;
+  --accent2: #ff35ab;
+  --green: #a200ff;
+  --yellow: #ffd700;
+  --red: #ff2d55;
+  --text: #c8d0e0;
+  --muted: #4a5568;
+  --road-bg: #12151c;
+  --road-line: #222840;
+}
+
+body {
+  background: var(--bg);
+  font-family: 'Rajdhani', sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+header {
+  position: relative;
+  z-index: 10;
+  padding: 14px 28px;
+  background: linear-gradient(90deg, rgba(0,229,255,0.06), transparent 60%);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+header h1 {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1.05rem;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-shadow: 0 0 18px var(--accent);
+}
+
+.badge {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.6rem;
+  padding: 2px 8px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 3px;
+  opacity: 0.65;
+  letter-spacing: 1px;
+}
+
+.hdr-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-wrap {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px 20px 0;
+  gap: 12px;
+}
+
+.top-row {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 14px;
+  align-items: start;
+}
+
+.sim-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0,229,255,0.04);
+}
+
+.panel-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot-live {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.road-wrapper {
+  position: relative;
+  height: 280px;
+  background: var(--road-bg);
+  overflow: hidden;
+}
+
+.road-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg, transparent, transparent 48px,
+    rgba(255,255,255,0.012) 48px,
+    rgba(255,255,255,0.012) 50px
+  );
+  pointer-events: none;
+}
+
+/* Emergency overlay flash */
+.road-wrapper.emergency-active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,45,85,0.04);
+  animation: emergencyFlash 0.4s infinite alternate;
+  z-index: 6;
+  pointer-events: none;
+}
+@keyframes emergencyFlash {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.lane-divider {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--road-line) 0px, var(--road-line) 18px, transparent 18px, transparent 36px);
+}
+#divider1 { top: 95px; }
+#divider2 { top: 188px; }
+
+.road-edge {
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  z-index: 2;
+}
+.road-edge.top { top: 0; background: linear-gradient(90deg, var(--accent), transparent 70%); }
+.road-edge.bottom { bottom: 0; background: linear-gradient(90deg, var(--accent), transparent 70%); }
+
+.intersection {
+  position: absolute;
+  left: 180px; top: 0; bottom: 0;
+  width: 2px;
+  background: rgba(0,229,255,0.1);
+  z-index: 4;
+}
+
+.crossing {
+  position: absolute;
+  left: 183px; top: 0; bottom: 0;
+  width: 26px;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 8px,
+    transparent 8px, transparent 16px
+  );
+  z-index: 3;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  border-right: 1px solid rgba(255,255,255,0.08);
+}
+
+.signal-box {
+  position: absolute;
+  left: 138px; top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: #080b10;
+  border: 1px solid var(--border2);
+  padding: 8px 7px;
+  border-radius: 8px;
+  z-index: 20;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+}
+
+.signal-light {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #1a1d23;
+  border: 1.5px solid rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.signal-light:hover { transform: scale(1.15); }
+.signal-light.active-red    { background: var(--red);    box-shadow: 0 0 12px var(--red),    0 0 28px rgba(255,45,85,0.5); }
+.signal-light.active-yellow { background: var(--yellow); box-shadow: 0 0 12px var(--yellow), 0 0 28px rgba(255,215,0,0.5); }
+.signal-light.active-green  { background: var(--green);  box-shadow: 0 0 12px var(--green),  0 0 28px rgba(0,255,136,0.5); }
+
+.timer-ring {
+  position: absolute;
+  left: 128px; bottom: 22px;
+  width: 42px; height: 42px;
+  z-index: 20;
+}
+.timer-ring svg { transform: rotate(-90deg); }
+.timer-ring circle { transition: stroke-dashoffset 1s linear; }
+
+.countdown {
+  position: absolute;
+  left: 143px; bottom: 31px;
+  z-index: 21;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--accent);
+  text-align: center;
+  width: 12px;
+}
+
+.phase-bar {
+  height: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+.phase-fill {
+  height: 100%;
+  width: 0%;
+  transition: width 1s linear, background 0.3s;
+}
+
+.speed-lines {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.35;
+}
+.speed-line {
+  position: absolute;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.4), transparent);
+  animation: speedLine 0.6s linear infinite;
+  left: -200px;
+}
+@keyframes speedLine { to { transform: translateX(1600px); } }
+
+/* ── CARS ── */
+.car {
+  position: absolute;
+  border-radius: 6px 10px 6px 6px;
+  z-index: 10;
+  /* NO transition here — JS handles dodge animation dynamically */
+}
+.car::before {
+  content: '';
+  position: absolute;
+  top: 4px; left: 12px; right: 7px; bottom: 5px;
+  background: rgba(0,0,0,0.22);
+  border-radius: 3px 6px 3px 3px;
+}
+.car::after {
+  content: '';
+  position: absolute;
+  top: 3px; right: 10px;
+  width: 18px; height: 9px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px 5px 2px 2px;
+  transform: skewX(-5deg);
+}
+.car.emergency {
+  background: linear-gradient(135deg, #ff2d55 40%, #0055ff 60%) !important;
+  box-shadow: 0 0 18px #ff2d55, 0 0 18px #0055ff;
+  animation: strobe 0.3s infinite;
+  z-index: 15;
+}
+@keyframes strobe {
+  0%,100% { box-shadow: 0 0 20px #ff2d55, 0 0 6px #0055ff; }
+  50%      { box-shadow: 0 0 6px #ff2d55,  0 0 20px #0055ff; }
+}
+
+/* Siren lights on ambulance */
+.car.emergency::before {
+  background: repeating-linear-gradient(90deg,
+    rgba(255,0,0,0.6) 0px, rgba(255,0,0,0.6) 6px,
+    rgba(0,50,255,0.6) 6px, rgba(0,50,255,0.6) 12px
+  );
+  animation: sirenColors 0.25s step-start infinite;
+}
+@keyframes sirenColors {
+  0%   { background: rgba(255,0,0,0.7); }
+  50%  { background: rgba(0,60,255,0.7); }
+  100% { background: rgba(255,0,0,0.7); }
+}
+
+.pedestrian {
+  position: absolute;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  z-index: 12;
+  transition: box-shadow 0.3s;
+}
+
+.live-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.stat-card-title {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.stat-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.sbox {
+  background: rgba(0,229,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+  transition: border-color 0.3s, background 0.3s;
+}
+.sbox:hover { border-color: var(--border2); background: rgba(0,229,255,0.06); }
+
+.sval {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1.5rem;
+  display: block;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 0 10px var(--accent);
+}
+.slabel {
+  font-size: 0.6rem;
+  color: var(--muted);
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mode-badge-box {
+  background: rgba(0,229,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+  margin-top: 6px;
+}
+.mode-badge-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--accent);
+  letter-spacing: 1px;
+  display: block;
+}
+
+#emergencyAlert {
+  display: none;
+  background: rgba(255,45,85,0.1);
+  border: 1px solid rgba(255,45,85,0.6);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--red);
+  text-align: center;
+  letter-spacing: 1px;
+  animation: flashAlert 0.5s infinite;
+}
+@keyframes flashAlert { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.log-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.log-title {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  text-transform: uppercase;
+}
+.log-body {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.62rem;
+  padding: 8px 12px;
+  height: 72px;
+  overflow-y: auto;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.log-body::-webkit-scrollbar { width: 2px; }
+.log-body::-webkit-scrollbar-thumb { background: var(--border2); }
+.log-entry { opacity: 0; animation: fadeLog 0.3s forwards; }
+@keyframes fadeLog { to { opacity: 1; } }
+
+.bottom-bar {
+  position: relative;
+  z-index: 5;
+  background: var(--surface);
+  border-top: 1px solid var(--border2);
+  padding: 16px 20px 18px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  gap: 20px;
+  align-items: center;
+  margin-top: auto;
+  box-shadow: 0 -12px 40px rgba(0,0,0,0.4);
+}
+
+.bsec-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.bsec-signal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.big-lights {
+  display: flex;
+  gap: 8px;
+  background: #080b10;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.big-light-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background: #1a1d23;
+}
+.big-light-btn:hover { transform: scale(1.15); }
+.big-light-btn.bl-red   { --glow: var(--red); }
+.big-light-btn.bl-yellow{ --glow: var(--yellow); }
+.big-light-btn.bl-green { --glow: var(--green); }
+.big-light-btn.active   { background: var(--glow); box-shadow: 0 0 16px var(--glow), 0 0 32px color-mix(in srgb, var(--glow) 40%, transparent); }
+
+.bsec-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.abtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.18s;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 600;
+  min-width: 70px;
+  position: relative;
+  overflow: hidden;
+}
+
+.abtn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0,229,255,0.15), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.abtn:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,229,255,0.12); }
+.abtn:hover::after { opacity: 1; }
+.abtn:active { transform: translateY(0) scale(0.96); }
+.abtn.active { border-color: var(--accent); background: rgba(0,229,255,0.08); color: var(--accent); }
+
+.abtn-icon { font-size: 1.3rem; line-height: 1; }
+.abtn-label { font-size: 0.65rem; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; }
+
+.abtn.emergency { border-color: rgba(255,45,85,0.35); }
+.abtn.emergency:hover { border-color: var(--red); color: var(--red); box-shadow: 0 6px 20px rgba(255,45,85,0.2); }
+.abtn.emergency::after { background: radial-gradient(circle at center, rgba(255,45,85,0.2), transparent 70%); }
+
+.bsec-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slider-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider-name {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.58rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+  min-width: 40px;
+  text-transform: uppercase;
+}
+
+.slider-val {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.62rem;
+  color: var(--accent);
+  min-width: 36px;
+  text-align: right;
+}
+
+input[type=range] {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border2);
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 6px var(--accent);
+  transition: transform 0.15s;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+.bsec-ai {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 1px;
+  min-width: 90px;
+  text-align: center;
+}
+.ai-toggle:hover { border-color: var(--accent); color: var(--text); }
+.ai-toggle.active {
+  border-color: var(--accent);
+  background: rgba(0,229,255,0.08);
+  color: var(--accent);
+  box-shadow: 0 0 20px rgba(0,229,255,0.15), inset 0 0 20px rgba(0,229,255,0.04);
+}
+
+.ai-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  transition: transform 0.3s;
+}
+.ai-toggle.active .ai-icon { animation: spin 3s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.ai-label { font-size: 0.65rem; text-transform: uppercase; }
+
+.bsec-spawn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.spawn-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 1px;
+  min-width: 90px;
+  text-align: center;
+}
+.spawn-toggle:hover { border-color: var(--green); color: var(--text); }
+.spawn-toggle.active {
+  border-color: var(--green);
+  background: rgba(0,255,136,0.07);
+  color: var(--green);
+  box-shadow: 0 0 20px rgba(0,255,136,0.12);
+}
+.spawn-icon { font-size: 1.6rem; line-height: 1; }
+.spawn-label { font-size: 0.65rem; text-transform: uppercase; }
+
+.bdivider {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  margin: 4px 0;
+}
+
+@keyframes ripple {
+  from { transform: scale(0); opacity: 0.5; }
+  to   { transform: scale(3); opacity: 0; }
+}
+.ripple-el {
+  position: absolute;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: rgba(0,229,255,0.3);
+  pointer-events: none;
+  animation: ripple 0.5s ease-out forwards;
+  transform-origin: center;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⬡ ADAPTIVE TRAFFIC SIGNAL</h1>
+  <span class="badge">NODE A7</span>
+  <span class="badge" id="modeBadge">MANUAL</span>
+  <div class="hdr-right">
+    <div id="emergencyAlert">⚠ EMERGENCY VEHICLE</div>
+  </div>
+</header>
+
+<div class="app-wrap">
+  <div class="top-row">
+
+    <div class="sim-panel">
+      <div class="panel-header">
+        <div class="dot-live"></div>
+        LIVE INTERSECTION — REAL-TIME ADAPTIVE CONTROL
+      </div>
+      <div class="road-wrapper" id="road">
+        <div class="speed-lines" id="speedLines"></div>
+        <div class="road-edge top"></div>
+        <div class="road-edge bottom"></div>
+        <div class="lane-divider" id="divider1"></div>
+        <div class="lane-divider" id="divider2"></div>
+        <div class="crossing"></div>
+        <div class="intersection"></div>
+        <div class="signal-box">
+          <div class="signal-light" id="lightRed"    title="Set Red"></div>
+          <div class="signal-light" id="lightYellow" title="Set Yellow"></div>
+          <div class="signal-light" id="lightGreen"  title="Set Green"></div>
+        </div>
+        <div class="timer-ring">
+          <svg width="42" height="42" viewBox="0 0 42 42">
+            <circle cx="21" cy="21" r="17" fill="none" stroke="#1e2330" stroke-width="3"/>
+            <circle id="timerCircle" cx="21" cy="21" r="17" fill="none"
+              stroke="var(--accent)" stroke-width="3"
+              stroke-dasharray="107" stroke-dashoffset="0"/>
+          </svg>
+        </div>
+        <div class="countdown" id="countdownNum">—</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-fill" id="phaseFill"></div>
+      </div>
+    </div>
+
+    <div class="live-stats">
+      <div class="stat-card">
+        <div class="stat-card-title">Traffic Stats</div>
+        <div class="stat-grid-2">
+          <div class="sbox">
+            <span class="sval" id="vehicleCountEl">0</span>
+            <div class="slabel">🚗 Vehicles</div>
+          </div>
+          <div class="sbox">
+            <span class="sval" id="pedCountEl">0</span>
+            <div class="slabel">👥 Peds</div>
+          </div>
+          <div class="sbox">
+            <span class="sval" id="passedCountEl" style="color:var(--green);text-shadow:0 0 10px var(--green)">0</span>
+            <div class="slabel">✓ Passed</div>
+          </div>
+          <div class="sbox">
+            <span class="sval" id="stoppedCountEl" style="color:var(--red);text-shadow:0 0 10px var(--red)">0</span>
+            <div class="slabel">⏸ Stopped</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card-title">Wait Timers</div>
+        <div class="stat-grid-2">
+          <div class="sbox">
+            <span class="sval" id="vehWaitEl" style="font-size:1.2rem;color:var(--accent2);text-shadow:0 0 10px var(--accent2)">0</span>
+            <div class="slabel">🚗 Veh Wait</div>
+          </div>
+          <div class="sbox">
+            <span class="sval" id="pedWaitEl" style="font-size:1.2rem;color:var(--yellow);text-shadow:0 0 10px var(--yellow)">0</span>
+            <div class="slabel">👥 Ped Wait</div>
+          </div>
+          <div class="sbox" style="grid-column:1/-1">
+            <span class="sval" id="greenTimeEl" style="font-size:1.1rem;color:var(--green);text-shadow:0 0 10px var(--green)">60s</span>
+            <div class="slabel">🟢 Green Phase</div>
+          </div>
+        </div>
+        <div class="mode-badge-box">
+          <span class="mode-badge-label" id="modeEl">—</span>
+        </div>
+      </div>
+
+      <div class="log-card">
+        <div class="log-title">Event Log</div>
+        <div class="log-body" id="eventLog"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="bottom-bar">
+
+  <div class="bsec-signal">
+    <div class="bsec-label">Signal</div>
+    <div class="big-lights">
+      <button class="big-light-btn bl-red"    id="sigRed"    title="Force Red"></button>
+      <button class="big-light-btn bl-yellow" id="sigYellow" title="Force Yellow"></button>
+      <button class="big-light-btn bl-green active" id="sigGreen" title="Force Green"></button>
+    </div>
+  </div>
+
+  <div class="bdivider"></div>
+
+  <div class="bsec-actions">
+    <div class="bsec-label">Actions</div>
+    <div class="action-btns">
+      <button class="abtn" id="btnAddVeh">
+        <span class="abtn-icon">🚗</span>
+        <span class="abtn-label">Add Car</span>
+      </button>
+      <button class="abtn" id="btnAddPed">
+        <span class="abtn-icon">🚶</span>
+        <span class="abtn-label">Add Ped</span>
+      </button>
+      <button class="abtn emergency" id="btnEmergency">
+        <span class="abtn-icon">🚑</span>
+        <span class="abtn-label">Ambulance</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="bdivider"></div>
+
+  <div class="bsec-sliders">
+    <div class="bsec-label">Parameters</div>
+    <div class="slider-group">
+      <div class="slider-item">
+        <span class="slider-name">Spawn</span>
+        <input type="range" id="spawnRate" min="500" max="4000" value="2000" step="100">
+        <span class="slider-val" id="spawnMs">2.0s</span>
+      </div>
+      <div class="slider-item">
+        <span class="slider-name">Green</span>
+        <input type="range" id="greenSlider" min="5" max="90" value="60" step="5">
+        <span class="slider-val" id="greenTime">60s</span>
+      </div>
+      <div class="slider-item">
+        <span class="slider-name">Speed</span>
+        <input type="range" id="speedSlider" min="1" max="5" value="3" step="0.5">
+        <span class="slider-val" id="speedVal">1×</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bdivider"></div>
+
+  <div class="bsec-spawn">
+    <div class="bsec-label">Traffic</div>
+    <button class="spawn-toggle active" id="btnSpawn">
+      <span class="spawn-icon">🚦</span>
+      <span class="spawn-label">Flow ON</span>
+    </button>
+  </div>
+
+  <div class="bsec-ai">
+    <div class="bsec-label">AI Engine</div>
+    <button class="ai-toggle" id="btnCycle">
+      <span class="ai-icon">🤖</span>
+      <span class="ai-label">AI OFF</span>
+    </button>
+  </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+//  ADAPTIVE TRAFFIC SIGNAL ENGINE
+// ══════════════════════════════════════════════════════════════════════
+
+const road = document.getElementById('road');
+
+let vehicleCount    = 0;
+let pedCount        = 0;
+let passedCount     = 0;
+let stoppedCount    = 0;
+let vehicleWait     = 0;
+let pedWait         = 0;
+let baseGreen       = 60;
+let spawnMs         = 2000;
+let speedMultiplier = 1;
+
+let adaptiveRunning  = false;
+let emergencyLockout = false;
+let phaseTimer       = null;
+let phaseSecondsLeft = 0;
+let phaseDuration    = 60;
+let currentPhase     = 'IDLE';
+let spawnVehicleInterval = null;
+let currentSignal = 'green';
+
+const lanes   = [48, 140, 230];
+let laneIndex = 0;
+
+let activePeds       = [];
+let pedAnimReq       = null;
+let lastPedTimestamp = null;
+
+// ── Track all active (non-emergency) car objects for dodge ──
+// Each entry: { el, laneY, originalTop, dodging, dodgeTarget, dodgeCurrent }
+let activeCars = [];
+
+// Reference to current ambulance element (for proximity calc)
+let ambulanceEl = null;
+
+// ─── DOM ─────────────────────────────────────────────────────────────
+const lightRed     = document.getElementById('lightRed');
+const lightYellow  = document.getElementById('lightYellow');
+const lightGreen   = document.getElementById('lightGreen');
+const timerCircle  = document.getElementById('timerCircle');
+const countdownNum = document.getElementById('countdownNum');
+const phaseFill    = document.getElementById('phaseFill');
+const eventLog     = document.getElementById('eventLog');
+const emergAlert   = document.getElementById('emergencyAlert');
+const modeBadge    = document.getElementById('modeBadge');
+const vCountEl     = document.getElementById('vehicleCountEl');
+const pCountEl     = document.getElementById('pedCountEl');
+const passedEl     = document.getElementById('passedCountEl');
+const stoppedEl    = document.getElementById('stoppedCountEl');
+const vehWaitEl    = document.getElementById('vehWaitEl');
+const pedWaitEl    = document.getElementById('pedWaitEl');
+const greenTimeEl  = document.getElementById('greenTimeEl');
+const modeEl       = document.getElementById('modeEl');
+
+// ─── RIPPLE EFFECT ───────────────────────────────────────────────────
+function addRipple(btn) {
+  const r = document.createElement('div');
+  r.className = 'ripple-el';
+  r.style.left = '50%'; r.style.top = '50%';
+  r.style.marginLeft = '-20px'; r.style.marginTop = '-20px';
+  btn.style.position = 'relative';
+  btn.appendChild(r);
+  setTimeout(() => r.remove(), 500);
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────
+function log(msg) {
+  const el = document.createElement('div');
+  el.className = 'log-entry';
+  const ts = new Date().toLocaleTimeString('en', { hour12: false });
+  el.textContent = `[${ts}] ${msg}`;
+  eventLog.prepend(el);
+  while (eventLog.children.length > 40) eventLog.removeChild(eventLog.lastChild);
+}
+
+function updateCounters() {
+  vCountEl.textContent  = vehicleCount;
+  pCountEl.textContent  = pedCount;
+  passedEl.textContent  = passedCount;
+  stoppedEl.textContent = stoppedCount;
+  vehWaitEl.textContent = vehicleWait;
+  pedWaitEl.textContent = pedWait;
+  greenTimeEl.textContent = baseGreen + 's';
+}
+
+function getScenario() {
+  if (vehicleCount > pedCount) return 'VEH_DOMINANT';
+  if (pedCount > vehicleCount) return 'PED_DOMINANT';
+  return 'EQUAL';
+}
+
+function setMode(label) {
+  modeBadge.textContent = label;
+  modeEl.textContent    = label;
+}
+
+// ─── SIGNAL ──────────────────────────────────────────────────────────
+function setSignal(state) {
+  currentSignal = state;
+  lightRed.className    = 'signal-light' + (state === 'red'    ? ' active-red'    : '');
+  lightYellow.className = 'signal-light' + (state === 'yellow' ? ' active-yellow' : '');
+  lightGreen.className  = 'signal-light' + (state === 'green'  ? ' active-green'  : '');
+  document.getElementById('sigRed').classList.toggle('active',    state === 'red');
+  document.getElementById('sigYellow').classList.toggle('active', state === 'yellow');
+  document.getElementById('sigGreen').classList.toggle('active',  state === 'green');
+  const colors = { red: 'var(--red)', yellow: 'var(--yellow)', green: 'var(--green)' };
+  phaseFill.style.background = colors[state];
+  log(`🚦 ${state.toUpperCase()}`);
+  if (state === 'green') pedWait = 0;
+  if (state === 'red')   vehicleWait = 0;
+  updateCounters();
+}
+
+// ─── TIMER ───────────────────────────────────────────────────────────
+const CIRCUMFERENCE = 107;
+function updateTimerRing(secsLeft, total) {
+  const pct = total > 0 ? Math.max(0, secsLeft / total) : 0;
+  timerCircle.style.strokeDashoffset = CIRCUMFERENCE * (1 - pct);
+  countdownNum.textContent = secsLeft > 0 ? secsLeft : '—';
+  phaseFill.style.width    = (pct * 100) + '%';
+}
+function clearTimerRing() {
+  timerCircle.style.strokeDashoffset = 0;
+  countdownNum.textContent = '—';
+  phaseFill.style.width = '0%';
+}
+function stopPhaseTimer() { clearInterval(phaseTimer); phaseTimer = null; }
+
+function startCountdown(seconds, tickFn, doneFn) {
+  stopPhaseTimer();
+  phaseSecondsLeft = seconds;
+  phaseDuration    = seconds;
+  updateTimerRing(phaseSecondsLeft, phaseDuration);
+  phaseTimer = setInterval(() => {
+    if (emergencyLockout) return;
+    phaseSecondsLeft--;
+    updateTimerRing(phaseSecondsLeft, phaseDuration);
+    if (tickFn) tickFn(phaseSecondsLeft);
+    if (phaseSecondsLeft <= 0) { stopPhaseTimer(); doneFn(); }
+  }, 1000);
+}
+
+function yellowThen(cb) {
+  currentPhase = 'YELLOW_TRANSITION';
+  setMode('YELLOW ⚡');
+  setSignal('yellow');
+  startCountdown(3, null, () => { if (adaptiveRunning && !emergencyLockout) cb(); });
+}
+
+const PED_CROSS_DURATION = 6;
+
+function startRedPhase(onDone) {
+  if (!adaptiveRunning) return;
+  currentPhase = 'RED_PHASE';
+  setMode('🚶 PED 6s');
+  setSignal('red');
+  log('🚶 Ped crossing — 6s');
+  startCountdown(PED_CROSS_DURATION, null, () => {
+    log('✅ 6s done — vehicles go');
+    if (adaptiveRunning && !emergencyLockout) onDone();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  ADAPTIVE RULES
+// ══════════════════════════════════════════════════════════════════════
+function runAdaptiveCycle() {
+  if (!adaptiveRunning || emergencyLockout) return;
+  const s = getScenario();
+  if      (s === 'VEH_DOMINANT') runVehiclesDominant();
+  else if (s === 'PED_DOMINANT') runPedsDominant();
+  else                            runEqual();
+}
+
+function runVehiclesDominant() {
+  if (!adaptiveRunning || emergencyLockout) return;
+  const maxGreen = Math.min(baseGreen * 2, 120);
+  currentPhase = 'GREEN_PHASE';
+  setMode('🚗 VEH DOMINANT');
+  setSignal('green');
+  log(`📊 Vehicles dominant — up to ${maxGreen}s green`);
+  startCountdown(maxGreen,
+    () => {
+      if (getScenario() !== 'VEH_DOMINANT') {
+        log('🔁 Load eased — ped phase');
+        stopPhaseTimer(); clearTimerRing();
+        yellowThen(() => startRedPhase(runAdaptiveCycle));
+      }
+    },
+    () => {
+      log('⏱ Max green — ped phase');
+      yellowThen(() => startRedPhase(runAdaptiveCycle));
+    }
+  );
+}
+
+const LOW_VEHICLE_THRESHOLD = 3;
+
+function runPedsDominant() {
+  if (!adaptiveRunning || emergencyLockout) return;
+  const vehiclesAreLow = vehicleCount <= LOW_VEHICLE_THRESHOLD;
+  if (vehiclesAreLow) {
+    log(`📊 Peds (${pedCount}) > Vehicles (${vehicleCount}), traffic LOW — RED now`);
+    setMode('🚶 PED PRIORITY ⚡');
+    currentPhase = 'GREEN_PHASE';
+    yellowThen(() => startRedPhase(runAdaptiveCycle));
+  } else {
+    currentPhase = 'GREEN_PHASE';
+    setMode('👥 PED DOMINANT');
+    setSignal('green');
+    log(`📊 Peds dominant — vehicles still (${vehicleCount}), ${baseGreen}s green then crossing`);
+    startCountdown(baseGreen,
+      () => {
+        if (vehicleCount <= LOW_VEHICLE_THRESHOLD) {
+          log('🔁 Vehicles dropped low — cutting green early for peds');
+          stopPhaseTimer(); clearTimerRing();
+          yellowThen(() => startRedPhase(runAdaptiveCycle));
+        }
+      },
+      () => { yellowThen(() => startRedPhase(runAdaptiveCycle)); }
+    );
+  }
+}
+
+function runEqual() {
+  if (!adaptiveRunning || emergencyLockout) return;
+  currentPhase = 'GREEN_PHASE';
+  setMode('⚖ BALANCED');
+  setSignal('green');
+  log(`📊 Balanced — ${baseGreen}s green / 6s ped`);
+  startCountdown(baseGreen, null, () => {
+    yellowThen(() => startRedPhase(runAdaptiveCycle));
+  });
+}
+
+function startAdaptive() {
+  adaptiveRunning = true;
+  const btn = document.getElementById('btnCycle');
+  btn.classList.add('active');
+  btn.querySelector('.ai-label').textContent = 'AI ON';
+  log('🤖 Adaptive AI ON');
+  runAdaptiveCycle();
+}
+
+function stopAdaptive() {
+  adaptiveRunning = false;
+  stopPhaseTimer(); clearTimerRing();
+  const btn = document.getElementById('btnCycle');
+  btn.classList.remove('active');
+  btn.querySelector('.ai-label').textContent = 'AI OFF';
+  setMode('MANUAL');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  DYNAMIC DODGE SYSTEM
+//  Cars dodge away from the ambulance based on real-time proximity.
+//  Uses a smooth lerp each animation frame.
+// ══════════════════════════════════════════════════════════════════════
+
+// How close the ambulance needs to be (px) to trigger full dodge
+const DODGE_RADIUS   = 180;
+// Maximum pixels a car is pushed aside (toward its lane edge)
+const MAX_DODGE_PX   = 28;
+// Lerp speed: how fast the dodge animates (0–1 per frame at 60fps)
+const DODGE_LERP     = 0.09;
+
+let dodgeRafId = null;
+
+function startDodgeLoop() {
+  if (dodgeRafId) return; // already running
+  function dodgeFrame() {
+    if (!emergencyLockout || !ambulanceEl) {
+      // Emergency over — smoothly lerp everything back to 0
+      let anyDodging = false;
+      for (const c of activeCars) {
+        if (Math.abs(c.dodgeCurrent) > 0.5) {
+          c.dodgeCurrent += (0 - c.dodgeCurrent) * DODGE_LERP;
+          anyDodging = true;
+        } else {
+          c.dodgeCurrent = 0;
+        }
+        c.el.style.marginTop = c.dodgeCurrent.toFixed(2) + 'px';
+      }
+      if (!anyDodging) {
+        dodgeRafId = null;
+        return;
+      }
+      dodgeRafId = requestAnimationFrame(dodgeFrame);
+      return;
+    }
+
+    const ambulanceX = parseFloat(ambulanceEl.style.left) || -999;
+    const ambulanceW = parseFloat(ambulanceEl.style.width) || 60;
+    const ambulanceCenterX = ambulanceX + ambulanceW / 2;
+    const roadH = road.offsetHeight; // 280
+
+    for (const c of activeCars) {
+      if (!c.el.parentElement) continue;
+
+      const carX = parseFloat(c.el.style.left) || 0;
+      const carW = parseFloat(c.el.style.width) || 50;
+      const carCenterX = carX + carW / 2;
+
+      // Distance between ambulance front and this car's centre
+      const dist = Math.abs(ambulanceCenterX - carCenterX);
+
+      // Influence: full dodge inside DODGE_RADIUS, tapers to 0 outside
+      const influence = Math.max(0, 1 - dist / DODGE_RADIUS);
+
+      // Direction: cars in upper half of road dodge UP (negative), lower half dodge DOWN (positive)
+      const carTopPx = parseFloat(c.el.style.top) || 0;
+      const isUpperHalf = (carTopPx + parseFloat(c.el.style.height || 22) / 2) < roadH / 2;
+      const dir = isUpperHalf ? -1 : 1;
+
+      c.dodgeTarget = dir * MAX_DODGE_PX * influence;
+
+      // Lerp toward target
+      c.dodgeCurrent += (c.dodgeTarget - c.dodgeCurrent) * DODGE_LERP;
+
+      // Apply as marginTop offset (won't conflict with JS left/top movement)
+      c.el.style.marginTop = c.dodgeCurrent.toFixed(2) + 'px';
+    }
+
+    dodgeRafId = requestAnimationFrame(dodgeFrame);
+  }
+  dodgeRafId = requestAnimationFrame(dodgeFrame);
+}
+
+// ──── EMERGENCY ──────────────────────────────────────────────────────
+let pedFrozen = false;
+
+function triggerEmergency() {
+  emergencyLockout = true;
+  pedFrozen = true;
+  stopPhaseTimer();
+  setSignal('green');
+  setMode('🚨 EMERGENCY');
+  emergAlert.style.display = 'block';
+  road.classList.add('emergency-active');
+  log('🚨 EMERGENCY — ambulance incoming! Cars making way!');
+
+  // Dim pedestrians
+  activePeds.forEach(p => {
+    p.el.style.transition = 'opacity 0.3s';
+    p.el.style.opacity    = '0.3';
+    p.el.style.filter     = 'grayscale(1)';
+  });
+
+  // Start the live proximity-based dodge loop
+  startDodgeLoop();
+}
+
+function resolveEmergency() {
+  emergencyLockout = false;
+  pedFrozen = false;
+  ambulanceEl = null;
+  emergAlert.style.display = 'none';
+  road.classList.remove('emergency-active');
+  log('✔ Ambulance cleared — traffic resuming');
+
+  // Restore pedestrians
+  activePeds.forEach(p => {
+    p.el.style.transition = 'opacity 0.4s, filter 0.4s';
+    p.el.style.opacity    = '1';
+    p.el.style.filter     = '';
+    setTimeout(() => { p.el.style.transition = ''; }, 500);
+  });
+
+  // The dodge loop will continue and smoothly return cars to 0 offset
+  // (startDodgeLoop keeps going until all are back)
+  startDodgeLoop();
+
+  if (adaptiveRunning) setTimeout(runAdaptiveCycle, 500);
+}
+
+// ──── VEHICLES ───────────────────────────────────────────────────────
+const CAR_COLORS = ['#e74c3c','#3498db','#f1c40f','#e67e22','#9b59b6','#1abc9c','#e91e63','#00bcd4'];
+
+function createVehicle(isEmergency = false) {
+  const car = document.createElement('div');
+  car.classList.add('car');
+  const lane = lanes[laneIndex % lanes.length];
+  laneIndex++;
+  const w = 50 + Math.random() * 28;
+  const h = Math.max(22, Math.round(w * 0.5));
+  car.style.width  = w + 'px';
+  car.style.height = h + 'px';
+  car.style.top    = (lane - h / 2) + 'px';
+  car.style.marginTop = '0px'; // initialise for dodge
+
+  if (isEmergency) {
+    car.classList.add('emergency');
+    ambulanceEl = car; // store reference for proximity checks
+    triggerEmergency();
+  } else {
+    const col = CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)];
+    car.style.background = `linear-gradient(135deg, ${col}, rgba(0,0,0,0.35))`;
+    car.style.boxShadow  = `0 4px 14px rgba(0,0,0,0.5), 0 0 6px ${col}44`;
+  }
+
+  let x = -w - 4;
+  car.style.left = x + 'px';
+  road.appendChild(car);
+  vehicleCount++;
+  updateCounters();
+
+  // Register in activeCars for dodge system (non-emergency only)
+  let carEntry = null;
+  if (!isEmergency) {
+    carEntry = {
+      el: car,
+      dodgeCurrent: 0,
+      dodgeTarget: 0
+    };
+    activeCars.push(carEntry);
+  }
+
+  const spd   = isEmergency ? 9 * speedMultiplier : (3 + Math.random() * 2) * speedMultiplier;
+  const stopX = 108;
+  let wasStopped = false;
+
+  const move = setInterval(() => {
+    if (!isEmergency && currentSignal !== 'green') {
+      if (x >= stopX - 8 && x <= stopX + 60) {
+        if (!wasStopped) { wasStopped = true; stoppedCount++; updateCounters(); }
+        return;
+      }
+    }
+    wasStopped = false;
+    x += spd;
+    car.style.left      = x + 'px';
+    // Only apply sine-wave bob when not dodging
+    if (!emergencyLockout || isEmergency) {
+      car.style.transform = `translateY(${Math.sin(x / 38) * 1.4}px)`;
+    }
+
+    if (x > road.offsetWidth + 100) {
+      clearInterval(move);
+      car.remove();
+      vehicleCount = Math.max(0, vehicleCount - 1);
+      passedCount++;
+      updateCounters();
+
+      // Remove from activeCars
+      if (carEntry) {
+        const idx = activeCars.indexOf(carEntry);
+        if (idx !== -1) activeCars.splice(idx, 1);
+      }
+
+      if (isEmergency) resolveEmergency();
+    }
+  }, 16);
+}
+
+// ──── PEDESTRIANS ────────────────────────────────────────────────────
+const PED_COLORS = ['#ffffff','#ff6b35','#00e5ff','#ffd700','#00ff88','#ff6eb4'];
+const CROSSING_LEFT  = 183;
+const CROSSING_WIDTH = 26;
+
+function createPedestrian() {
+  const ped = document.createElement('div');
+  ped.classList.add('pedestrian');
+  const col = PED_COLORS[Math.floor(Math.random() * PED_COLORS.length)];
+  ped.style.background = col;
+  ped.style.boxShadow  = `0 0 7px ${col}`;
+  const xPos = CROSSING_LEFT + 4 + Math.random() * (CROSSING_WIDTH - 8);
+  ped.style.left = Math.round(xPos) + 'px';
+  road.appendChild(ped);
+  pedCount++;
+  updateCounters();
+  log('👤 Pedestrian waiting at crossing');
+  const pedH = 9;
+  let pos = road.offsetHeight - pedH - 2;
+  ped.style.top = pos + 'px';
+  const walkSpeed = (50 + Math.random() * 30) * speedMultiplier;
+  const pedObj = { el: ped, pos, speed: walkSpeed, h: pedH };
+  activePeds.push(pedObj);
+  if (!pedAnimReq) {
+    lastPedTimestamp = null;
+    pedAnimReq = requestAnimationFrame(function animatePeds(ts) {
+      if (!lastPedTimestamp) lastPedTimestamp = ts;
+      const dt = (ts - lastPedTimestamp) / 1000;
+      lastPedTimestamp = ts;
+      for (let i = activePeds.length - 1; i >= 0; i--) {
+        const p = activePeds[i];
+        if (!pedFrozen && (currentSignal === 'red' || currentSignal === 'yellow')) {
+          p.pos -= p.speed * dt;
+          p.el.style.top = Math.round(p.pos) + 'px';
+        }
+        if (p.pos < -p.h - 10) {
+          if (p.el.parentElement) road.removeChild(p.el);
+          activePeds.splice(i, 1);
+          pedCount = Math.max(0, pedCount - 1);
+          updateCounters();
+        }
+      }
+      if (activePeds.length > 0) {
+        pedAnimReq = requestAnimationFrame(animatePeds);
+      } else {
+        pedAnimReq = null;
+        lastPedTimestamp = null;
+      }
+    });
+  }
+}
+
+// ──── WAIT COUNTER ───────────────────────────────────────────────────
+const PED_WAIT_LIMIT = 5;
+const CAR_WAIT_LIMIT = 6;
+
+setInterval(() => {
+  if (pedCount > 0 && currentSignal === 'green') pedWait++;
+  else if (pedCount === 0) pedWait = 0;
+  if (vehicleCount > 0 && currentSignal !== 'green') vehicleWait++;
+  else if (vehicleCount === 0) vehicleWait = 0;
+  updateCounters();
+
+  const pedsNeedCrossing = pedCount > 0 && currentSignal === 'green' && !emergencyLockout;
+  const immediateRedCondition = pedsNeedCrossing && pedCount > vehicleCount && vehicleCount <= LOW_VEHICLE_THRESHOLD;
+  const waitLimitReached      = pedsNeedCrossing && pedWait >= PED_WAIT_LIMIT;
+
+  if (immediateRedCondition || waitLimitReached) {
+    const reason = immediateRedCondition
+      ? `Peds (${pedCount}) > Vehicles (${vehicleCount}), traffic low — RED immediately`
+      : `Peds waited ${pedWait}s — switching to RED`;
+    log(`🚶 ${reason}`);
+    pedWait = 0;
+    stopPhaseTimer(); clearTimerRing();
+    if (adaptiveRunning) {
+      yellowThen(() => startRedPhase(runAdaptiveCycle));
+    } else {
+      setSignal('yellow');
+      setMode('🚶 PED PRIORITY');
+      setTimeout(() => {
+        setSignal('red');
+        setMode('🚶 PED 6s');
+        log('🚶 Ped crossing — 6s');
+        let t = PED_CROSS_DURATION;
+        updateTimerRing(t, PED_CROSS_DURATION);
+        const ri = setInterval(() => {
+          t--;
+          updateTimerRing(t, PED_CROSS_DURATION);
+          if (t <= 0) {
+            clearInterval(ri);
+            clearTimerRing();
+            log('✅ 6s done — vehicles go');
+            setSignal('green');
+            setMode('MANUAL');
+          }
+        }, 1000);
+      }, 1500);
+    }
+  }
+
+  if (!adaptiveRunning && vehicleCount > 0 && vehicleWait >= CAR_WAIT_LIMIT && currentSignal === 'red' && !emergencyLockout) {
+    log(`🚗 Cars waited ${vehicleWait}s — switching to GREEN`);
+    vehicleWait = 0;
+    setSignal('green');
+    setMode('MANUAL');
+    clearTimerRing();
+  }
+}, 1000);
+
+setInterval(() => {
+  if (pedCount === 0 && !adaptiveRunning && currentSignal === 'red' && !emergencyLockout) {
+    setSignal('green');
+  }
+}, 1000);
+
+setInterval(() => {
+  if (vehicleCount > 0 || spawnVehicleInterval) {
+    const sl = document.getElementById('speedLines');
+    const line = document.createElement('div');
+    line.className = 'speed-line';
+    line.style.cssText = `top:${10+Math.random()*260}px;width:${60+Math.random()*120}px;animation-duration:${0.4+Math.random()*0.5}s;`;
+    sl.appendChild(line);
+    setTimeout(() => line.remove(), 700);
+  }
+}, 200);
+
+// ══════════════════════════════════════════════════════════════════════
+//  BUTTON WIRING
+// ══════════════════════════════════════════════════════════════════════
+document.getElementById('sigRed').addEventListener('click', function() {
+  addRipple(this); stopAdaptive(); setSignal('red'); setMode('MANUAL');
+});
+document.getElementById('sigYellow').addEventListener('click', function() {
+  addRipple(this); stopAdaptive(); setSignal('yellow'); setMode('MANUAL');
+});
+document.getElementById('sigGreen').addEventListener('click', function() {
+  addRipple(this); stopAdaptive(); setSignal('green'); setMode('MANUAL');
+});
+
+lightRed.onclick    = () => { stopAdaptive(); setSignal('red');    setMode('MANUAL'); };
+lightYellow.onclick = () => { stopAdaptive(); setSignal('yellow'); setMode('MANUAL'); };
+lightGreen.onclick  = () => { stopAdaptive(); setSignal('green');  setMode('MANUAL'); };
+
+const btnSpawn = document.getElementById('btnSpawn');
+btnSpawn.addEventListener('click', function() {
+  addRipple(this);
+  if (spawnVehicleInterval) {
+    clearInterval(spawnVehicleInterval);
+    spawnVehicleInterval = null;
+    this.classList.remove('active');
+    this.querySelector('.spawn-label').textContent = 'Flow OFF';
+    log('Traffic spawn stopped');
+  } else {
+    spawnVehicleInterval = setInterval(() => {
+      if (Math.random() > 0.3) createVehicle(false);
+    }, spawnMs);
+    this.classList.add('active');
+    this.querySelector('.spawn-label').textContent = 'Flow ON';
+    log('Traffic spawn started');
+  }
+});
+
+document.getElementById('btnCycle').addEventListener('click', function() {
+  addRipple(this);
+  if (adaptiveRunning) { stopAdaptive(); log('Adaptive AI stopped'); }
+  else                  { startAdaptive(); }
+});
+
+document.getElementById('btnAddVeh').addEventListener('click', function() {
+  addRipple(this); createVehicle(false); log('Manual vehicle');
+});
+document.getElementById('btnAddPed').addEventListener('click', function() {
+  addRipple(this); createPedestrian();
+});
+document.getElementById('btnEmergency').addEventListener('click', function() {
+  addRipple(this); createVehicle(true);
+});
+
+document.getElementById('spawnRate').addEventListener('input', function() {
+  spawnMs = Number(this.value);
+  document.getElementById('spawnMs').textContent = (spawnMs/1000).toFixed(1) + 's';
+  if (spawnVehicleInterval) {
+    clearInterval(spawnVehicleInterval);
+    spawnVehicleInterval = setInterval(() => {
+      if (Math.random() > 0.3) createVehicle(false);
+    }, spawnMs);
+  }
+});
+
+document.getElementById('greenSlider').addEventListener('input', function() {
+  baseGreen = Number(this.value);
+  document.getElementById('greenTime').textContent = baseGreen + 's';
+  updateCounters();
+  log(`Green → ${baseGreen}s`);
+});
+
+document.getElementById('speedSlider').addEventListener('input', function() {
+  speedMultiplier = parseFloat(this.value) / 3;
+  document.getElementById('speedVal').textContent = speedMultiplier.toFixed(1) + '×';
+  activePeds.forEach(p => { p.speed = (40 + Math.random() * 40) * speedMultiplier; });
+  if (spawnVehicleInterval) {
+    clearInterval(spawnVehicleInterval);
+    spawnVehicleInterval = setInterval(() => {
+      if (Math.random() > 0.3) createVehicle(false);
+    }, spawnMs);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════════════
+setSignal('green');
+setMode('MANUAL');
+updateCounters();
+
+spawnVehicleInterval = setInterval(() => {
+  if (Math.random() > 0.3) createVehicle(false);
+}, spawnMs);
+document.getElementById('btnSpawn').classList.add('active');
+document.getElementById('btnSpawn').querySelector('.spawn-label').textContent = 'Flow ON';
+
+log('Node A7 online');
+log('Enable AI for adaptive control');
+</script>
+</body>
+</html>
